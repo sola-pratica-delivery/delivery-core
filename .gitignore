@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Coverage output
+coverage/
+
+# Staging / temporary uploads
+data/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Env files
+.env
+.env.*
+
+# Editor / OS
+.DS_Store
+Thumbs.db
