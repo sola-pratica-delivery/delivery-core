@@ -1,3 +1,5 @@
+import type { MediaValidationResult } from "./probe/types.js";
+
 export interface UploadMetadata {
   uploadId: string;
   filename: string;
@@ -25,6 +27,10 @@ export interface AppConfig extends UploadServiceConfig {
   port: number;
   logLevel: string;
   onUploadComplete?: (metadata: UploadMetadata) => void | Promise<void>;
+  onUploadValidated?: (
+    result: MediaValidationResult,
+    metadata: UploadMetadata,
+  ) => void | Promise<void>;
 }
 
 export interface AuthInfo {

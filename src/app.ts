@@ -5,11 +5,13 @@ import { createAuth } from "./auth.js";
 import { requireOffsetContentType, requireTusResumable } from "./protocol.js";
 import { createTusServer } from "./upload-server.js";
 import { checksumContext, parseChecksumHeader } from "./checksum.js";
+import { ValidationStore } from "./probe/store.js";
 
 export function buildApp(config: AppConfig): FastifyInstance {
   const app = Fastify({ logger: { level: config.logLevel } });
   const tus = createTusServer(config);
   const authenticate = createAuth(config);
+  const validationStore = new ValidationStore(config.storageDir);
 
   async function tusGateway(request: FastifyRequest, reply: FastifyReply) {
     await authenticate(request, reply);
@@ -59,6 +61,29 @@ export function buildApp(config: AppConfig): FastifyInstance {
     url: `${config.uploadPath}/:id`,
     onRequest: tusGateway,
     handler: async () => {},
+  });
+
+  app.get(`${config.uploadPath}/:id/validation`, {
+    onRequest: async (request, reply) => {
+      await authenticate(request, reply);
+    },
+    handler: async (request, reply) => {
+      if (reply.sent) {
+        return;
+      }
+      const { id } = request.params as { id?: string };
+      if (typeof id !== "string" || id.length === 0) {
+        return reply.status(404).send({ uploadId: id ?? "", status: "NOT_FOUND" });
+      }
+      const report = await validationStore.read(id);
+      if (report === null) {
+        return reply.status(404).send({ uploadId: id, status: "NOT_FOUND" });
+      }
+      if (report.status === "VALID") {
+        return reply.status(200).send(report);
+      }
+      return reply.status(422).send(report);
+    },
   });
 
   return app;

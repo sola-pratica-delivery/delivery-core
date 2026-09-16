@@ -1,7 +1,10 @@
 import { EVENTS, Server } from "@tus/server";
-import type { AppConfig } from "./types.js";
+import path from "node:path";
+import type { AppConfig, UploadMetadata } from "./types.js";
 import { ChecksumFileStore } from "./checksum-store.js";
 import { toUploadMetadata } from "./metadata.js";
+import { validateMedia } from "./probe/validator.js";
+import { ValidationStore } from "./probe/store.js";
 
 export const TUS_EXTENSIONS = ["creation", "termination", "checksum"];
 
@@ -34,6 +37,11 @@ export function createTusServer(config: AppConfig): Server {
     try {
       const stored = await store.getUpload(upload.id);
       const metadata = await toUploadMetadata(stored);
+      const storagePath =
+        stored.storage?.type === "file"
+          ? stored.storage.path
+          : path.join(config.storageDir, upload.id);
+      await runValidation(config, upload.id, storagePath, metadata);
       await config.onUploadComplete?.(metadata);
     } catch {
       // Intentionally swallowed: observability wiring lands in a later issue.
@@ -41,4 +49,16 @@ export function createTusServer(config: AppConfig): Server {
   });
 
   return server;
+}
+
+async function runValidation(
+  config: AppConfig,
+  uploadId: string,
+  storagePath: string,
+  metadata: UploadMetadata,
+): Promise<void> {
+  const validationStore = new ValidationStore(config.storageDir);
+  const result = await validateMedia(storagePath);
+  await validationStore.save(uploadId, result);
+  await config.onUploadValidated?.(result, metadata);
 }
