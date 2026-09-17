@@ -273,6 +273,7 @@ describe("Job lifecycle - GET /uploads/:id/job", () => {
       expect(job.status).toBe("PROCESSING");
       expect(job.transitions.map((t) => t.to)).toEqual([
         "UPLOADING",
+        "UPLOAD_COMPLETED",
         "PROCESSING",
       ]);
       expect(job.metadata.videoCodec).toBe("h264");
@@ -304,17 +305,30 @@ describe("FileJobStore", () => {
     const byJobId = await store.get("job-1");
     expect(byJobId?.uploadId).toBe("upload-1");
 
+    const completed = await store.transition(
+      "upload-1",
+      "UPLOAD_COMPLETED",
+      "Validation passed",
+    );
+    expect(completed.status).toBe("UPLOAD_COMPLETED");
+    expect(completed.transitions).toHaveLength(2);
+    expect(completed.transitions[1]).toMatchObject({
+      from: "UPLOADING",
+      to: "UPLOAD_COMPLETED",
+      reason: "Validation passed",
+    });
+
     const processed = await store.transition(
       "upload-1",
       "PROCESSING",
-      "Validation passed",
+      "Queued",
     );
     expect(processed.status).toBe("PROCESSING");
-    expect(processed.transitions).toHaveLength(2);
-    expect(processed.transitions[1]).toMatchObject({
-      from: "UPLOADING",
+    expect(processed.transitions).toHaveLength(3);
+    expect(processed.transitions[2]).toMatchObject({
+      from: "UPLOAD_COMPLETED",
       to: "PROCESSING",
-      reason: "Validation passed",
+      reason: "Queued",
     });
   });
 

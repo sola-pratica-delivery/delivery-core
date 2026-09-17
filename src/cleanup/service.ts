@@ -124,12 +124,10 @@ export class StorageCleanupService implements StorageCleanupServiceInterface {
         continue;
       }
       if (!raws.has(record.uploadId) && record.isPurged !== true) {
-        await this.jobStore.transition(
-          record.uploadId,
-          record.status,
-          "Marked as purged after raw material loss",
-          { isPurged: true, purgedAt: new Date().toISOString() },
-        );
+        await this.jobStore.update(record.uploadId, {
+          isPurged: true,
+          purgedAt: new Date().toISOString(),
+        });
       }
     }
 
@@ -170,7 +168,7 @@ export class StorageCleanupService implements StorageCleanupServiceInterface {
       // Physical file already gone; purge marking stays idempotent.
     }
 
-    await this.jobStore.transition(uploadId, job.status, "Raw material purged", {
+    await this.jobStore.update(uploadId, {
       isPurged: true,
       purgedAt,
     });

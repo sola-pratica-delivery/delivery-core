@@ -7,6 +7,7 @@ import type {
   JobStatus,
   JobStore,
 } from "./types.js";
+import { JobStateMachine } from "./state-machine.js";
 
 export class FileJobStore implements JobStore {
   private readonly directory: string;
@@ -68,18 +69,30 @@ export class FileJobStore implements JobStore {
     to: JobStatus,
     reason?: string,
     updates?: Partial<JobRecord>,
+    transitionMetadata?: Record<string, unknown>,
   ): Promise<JobRecord> {
     const existing = await this.get(uploadId);
     if (existing === null) {
       throw new Error(`Job not found for upload ${uploadId}`);
     }
 
+    JobStateMachine.validateTransition(existing.status, to);
+
     const now = new Date().toISOString();
+    const previous = existing.transitions[existing.transitions.length - 1];
+    const durationMs =
+      previous !== undefined
+        ? JobStateMachine.calculateDuration(previous.timestamp, now)
+        : undefined;
     const transition: JobStateTransition = {
       from: existing.status,
       to,
       timestamp: now,
+      ...(durationMs !== undefined ? { durationMs } : {}),
       ...(reason !== undefined ? { reason } : {}),
+      ...(transitionMetadata !== undefined
+        ? { metadata: transitionMetadata }
+        : {}),
     };
 
     const record: JobRecord = {
@@ -88,6 +101,27 @@ export class FileJobStore implements JobStore {
       status: to,
       updatedAt: now,
       transitions: [...existing.transitions, transition],
+    };
+
+    await this.save(record);
+    return record;
+  }
+
+  async update(
+    uploadId: string,
+    updates: Partial<JobRecord>,
+  ): Promise<JobRecord> {
+    const existing = await this.get(uploadId);
+    if (existing === null) {
+      throw new Error(`Job not found for upload ${uploadId}`);
+    }
+
+    const record: JobRecord = {
+      ...existing,
+      ...updates,
+      status: existing.status,
+      transitions: existing.transitions,
+      updatedAt: new Date().toISOString(),
     };
 
     await this.save(record);

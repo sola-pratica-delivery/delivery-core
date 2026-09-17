@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { z } from "zod";
 import type { AppConfig } from "./types.js";
 import { createAuth } from "./auth.js";
 import { requireOffsetContentType, requireTusResumable } from "./protocol.js";
@@ -7,11 +8,19 @@ import { createTusServer } from "./upload-server.js";
 import { checksumContext, parseChecksumHeader } from "./checksum.js";
 import { ValidationStore } from "./probe/store.js";
 import { FileJobStore } from "./job/store.js";
+import { JOB_STATUSES } from "./job/types.js";
+import { InvalidStateTransitionError } from "./job/state-machine.js";
 import {
   PurgeConflictError,
   PurgeNotFoundError,
   StorageCleanupService,
 } from "./cleanup/service.js";
+
+const transitionBodySchema = z.object({
+  to: z.enum(JOB_STATUSES),
+  reason: z.string().min(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
 
 export function buildApp(config: AppConfig): FastifyInstance {
   const app = Fastify({ logger: { level: config.logLevel } });
@@ -155,6 +164,52 @@ export function buildApp(config: AppConfig): FastifyInstance {
         }
         if (error instanceof PurgeConflictError) {
           return reply.status(409).send({ uploadId: id, status: "UPLOADING" });
+        }
+        throw error;
+      }
+    },
+  });
+
+  app.post(`${config.uploadPath}/:id/transition`, {
+    onRequest: async (request, reply) => {
+      await authenticate(request, reply);
+    },
+    handler: async (request, reply) => {
+      if (reply.sent) {
+        return;
+      }
+      const { id } = request.params as { id?: string };
+      if (typeof id !== "string" || id.length === 0) {
+        return reply.status(404).send({ uploadId: id ?? "", status: "NOT_FOUND" });
+      }
+      const parsed = transitionBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({
+          code: "INVALID_PAYLOAD",
+          message: "Invalid transition payload",
+        });
+      }
+      const job = await jobStore.get(id);
+      if (job === null) {
+        return reply.status(404).send({ uploadId: id, status: "NOT_FOUND" });
+      }
+      try {
+        const updated = await jobStore.transition(
+          id,
+          parsed.data.to,
+          parsed.data.reason,
+          undefined,
+          parsed.data.metadata,
+        );
+        return reply.status(200).send(updated);
+      } catch (error) {
+        if (error instanceof InvalidStateTransitionError) {
+          return reply.status(422).send({
+            code: error.code,
+            message: error.message,
+            from: error.currentStatus,
+            to: error.targetStatus,
+          });
         }
         throw error;
       }

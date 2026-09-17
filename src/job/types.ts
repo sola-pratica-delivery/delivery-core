@@ -1,12 +1,37 @@
 import type { MediaProbeMetadata } from "../probe/types.js";
 
-export type JobStatus = "UPLOADING" | "PROCESSING" | "FAILED";
+export const JOB_STATUSES = [
+  "UPLOADING",
+  "UPLOAD_COMPLETED",
+  "PROCESSING",
+  "AUTO_QA",
+  "AUTO_PUBLISH_YOUTUBE",
+  "COMPLETED",
+  "FAILED",
+] as const;
+
+export type JobStatus = (typeof JOB_STATUSES)[number];
+
+export const ALLOWED_TRANSITIONS: Record<
+  JobStatus,
+  readonly JobStatus[]
+> = {
+  UPLOADING: ["UPLOAD_COMPLETED", "FAILED"],
+  UPLOAD_COMPLETED: ["PROCESSING", "FAILED"],
+  PROCESSING: ["AUTO_QA", "FAILED"],
+  AUTO_QA: ["AUTO_PUBLISH_YOUTUBE", "FAILED"],
+  AUTO_PUBLISH_YOUTUBE: ["COMPLETED", "FAILED"],
+  COMPLETED: [],
+  FAILED: ["UPLOADING"],
+} as const;
 
 export interface JobStateTransition {
   from: JobStatus | null;
   to: JobStatus;
   timestamp: string;
+  durationMs?: number;
   reason?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface UploadJobMetadata {
@@ -57,7 +82,9 @@ export interface JobStore {
     to: JobStatus,
     reason?: string,
     updates?: Partial<JobRecord>,
+    transitionMetadata?: Record<string, unknown>,
   ): Promise<JobRecord>;
+  update(uploadId: string, updates: Partial<JobRecord>): Promise<JobRecord>;
 }
 
 export function toUploadJobMetadata(

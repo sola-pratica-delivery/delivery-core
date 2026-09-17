@@ -84,9 +84,19 @@ export function createTusServer(config: AppConfig): Server {
 
       const result = await runValidation(config, upload.id, storagePath, metadata);
       if (result.valid) {
-        job = await jobStore.transition(upload.id, "PROCESSING", "Media validation passed", {
-          metadata: toUploadJobMetadata(metadata, result.metadata),
-        });
+        job = await jobStore.transition(
+          upload.id,
+          "UPLOAD_COMPLETED",
+          "Media validation passed",
+          {
+            metadata: toUploadJobMetadata(metadata, result.metadata),
+          },
+        );
+        job = await jobStore.transition(
+          upload.id,
+          "PROCESSING",
+          "Video queued for processing",
+        );
         await config.onJobUpdated?.(job);
         const event: UploadCompletedEventPayload = {
           eventId: randomUUID(),
