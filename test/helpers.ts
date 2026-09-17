@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import type { AppConfig } from "../src/types.js";
+import { DEFAULT_QUEUE_CONFIG } from "../src/config.js";
 
 export const TEST_TOKEN = "test-token-123";
 export const TEST_TOKEN_2 = "test-token-456";
@@ -23,6 +24,7 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     port: 0,
     logLevel: "silent",
     orphanTtlHours: 24,
+    queue: DEFAULT_QUEUE_CONFIG,
     ...overrides,
   };
 }

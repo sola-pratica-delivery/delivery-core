@@ -1,12 +1,22 @@
 import path from "node:path";
 import { z } from "zod";
-import type { AppConfig } from "./types.js";
+import type { AppConfig, QueueConfig } from "./types.js";
 
 export const DEFAULT_MAX_FILE_SIZE = 50 * 1024 * 1024 * 1024;
 export const DEFAULT_MIN_CHUNK_SIZE = 5 * 1024 * 1024;
 export const DEFAULT_MAX_CHUNK_SIZE = 20 * 1024 * 1024;
 export const DEFAULT_UPLOAD_PATH = "/uploads";
 export const DEFAULT_ORPHAN_TTL_HOURS = 24;
+
+export const DEFAULT_QUEUE_CONFIG: QueueConfig = {
+  redisHost: "127.0.0.1",
+  redisPort: 6379,
+  redisPassword: "",
+  concurrencyVideoEngine: 1,
+  concurrencyPublisher: 2,
+  maxRetries: 3,
+  backoffDelayMs: 1000,
+};
 
 const envSchema = z.object({
   NODE_ENV: z.string().default("development"),
@@ -38,6 +48,31 @@ const envSchema = z.object({
     .int()
     .nonnegative()
     .default(DEFAULT_ORPHAN_TTL_HOURS),
+  REDIS_HOST: z.string().default(DEFAULT_QUEUE_CONFIG.redisHost),
+  REDIS_PORT: z.coerce.number().int().positive().default(DEFAULT_QUEUE_CONFIG.redisPort),
+  REDIS_PASSWORD: z
+    .string()
+    .default(DEFAULT_QUEUE_CONFIG.redisPassword ?? ""),
+  WORKER_CONCURRENCY_VIDEO_ENGINE: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_QUEUE_CONFIG.concurrencyVideoEngine),
+  WORKER_CONCURRENCY_PUBLISHER: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_QUEUE_CONFIG.concurrencyPublisher),
+  QUEUE_MAX_RETRIES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_QUEUE_CONFIG.maxRetries),
+  QUEUE_BACKOFF_INITIAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_QUEUE_CONFIG.backoffDelayMs),
 });
 
 export interface Env {
@@ -59,5 +94,14 @@ export function loadConfig(env: Env = process.env): AppConfig {
       .map((token) => token.trim())
       .filter((token) => token.length > 0),
     orphanTtlHours: parsed.UPLOAD_ORPHAN_TTL_HOURS,
+    queue: {
+      redisHost: parsed.REDIS_HOST,
+      redisPort: parsed.REDIS_PORT,
+      redisPassword: parsed.REDIS_PASSWORD,
+      concurrencyVideoEngine: parsed.WORKER_CONCURRENCY_VIDEO_ENGINE,
+      concurrencyPublisher: parsed.WORKER_CONCURRENCY_PUBLISHER,
+      maxRetries: parsed.QUEUE_MAX_RETRIES,
+      backoffDelayMs: parsed.QUEUE_BACKOFF_INITIAL_MS,
+    },
   };
 }

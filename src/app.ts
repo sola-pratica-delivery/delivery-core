@@ -10,6 +10,9 @@ import { ValidationStore } from "./probe/store.js";
 import { FileJobStore } from "./job/store.js";
 import { JOB_STATUSES } from "./job/types.js";
 import { InvalidStateTransitionError } from "./job/state-machine.js";
+import { InMemoryQueueManager } from "./queue/manager.js";
+import { QUEUE_NAMES } from "./queue/types.js";
+import type { VideoProcessingJobData, YouTubePublishJobData } from "./queue/types.js";
 import {
   PurgeConflictError,
   PurgeNotFoundError,
@@ -30,6 +33,39 @@ export function buildApp(config: AppConfig): FastifyInstance {
   const jobStore = new FileJobStore(config.storageDir);
   const cleanupService = new StorageCleanupService(config.storageDir, jobStore, {
     orphanTtlMs: config.orphanTtlHours * 60 * 60 * 1000,
+  });
+  const queueManager = new InMemoryQueueManager({
+    maxRetries: config.queue.maxRetries,
+    backoffDelayMs: config.queue.backoffDelayMs,
+    concurrency: {
+      [QUEUE_NAMES.VIDEO_PROCESSING]: config.queue.concurrencyVideoEngine,
+      [QUEUE_NAMES.YOUTUBE_PUBLISH]: config.queue.concurrencyPublisher,
+    },
+    onJobFailed: async (failure) => {
+      const data = failure.data as Partial<
+        VideoProcessingJobData & YouTubePublishJobData
+      >;
+      const jobId = typeof data.jobId === "string" ? data.jobId : undefined;
+      const uploadId = typeof data.uploadId === "string" ? data.uploadId : undefined;
+      const key = uploadId ?? jobId;
+      if (key === undefined) {
+        return;
+      }
+      const job = await jobStore.get(key);
+      if (job === null || job.status === "FAILED" || job.status === "COMPLETED") {
+        return;
+      }
+      await jobStore.transition(key, "FAILED", `Queue terminal failure: ${failure.error.message}`, {
+        error: {
+          code: "QUEUE_JOB_FAILED",
+          message: failure.error.message,
+        },
+      });
+    },
+  });
+  app.decorate("queueManager", queueManager);
+  app.addHook("onClose", async () => {
+    await queueManager.close();
   });
 
   async function tusGateway(request: FastifyRequest, reply: FastifyReply) {

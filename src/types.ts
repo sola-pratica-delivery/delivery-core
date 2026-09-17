@@ -24,11 +24,23 @@ export interface UploadServiceConfig {
   uploadPath: string;
 }
 
+export interface QueueConfig {
+  redisUrl?: string;
+  redisHost: string;
+  redisPort: number;
+  redisPassword?: string;
+  concurrencyVideoEngine: number;
+  concurrencyPublisher: number;
+  maxRetries: number;
+  backoffDelayMs: number;
+}
+
 export interface AppConfig extends UploadServiceConfig {
   host: string;
   port: number;
   logLevel: string;
   orphanTtlHours: number;
+  queue: QueueConfig;
   onUploadComplete?: (metadata: UploadMetadata) => void | Promise<void>;
   onUploadValidated?: (
     result: MediaValidationResult,
