@@ -43,6 +43,8 @@ export interface JobRecord {
   createdAt: string;
   updatedAt: string;
   error?: JobError;
+  isPurged?: boolean;
+  purgedAt?: string;
 }
 
 export interface JobStore {

@@ -6,6 +6,7 @@ export const DEFAULT_MAX_FILE_SIZE = 50 * 1024 * 1024 * 1024;
 export const DEFAULT_MIN_CHUNK_SIZE = 5 * 1024 * 1024;
 export const DEFAULT_MAX_CHUNK_SIZE = 20 * 1024 * 1024;
 export const DEFAULT_UPLOAD_PATH = "/uploads";
+export const DEFAULT_ORPHAN_TTL_HOURS = 24;
 
 const envSchema = z.object({
   NODE_ENV: z.string().default("development"),
@@ -32,6 +33,11 @@ const envSchema = z.object({
     .positive()
     .default(DEFAULT_MAX_CHUNK_SIZE),
   API_TOKENS: z.string().default(""),
+  UPLOAD_ORPHAN_TTL_HOURS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(DEFAULT_ORPHAN_TTL_HOURS),
 });
 
 export interface Env {
@@ -52,5 +58,6 @@ export function loadConfig(env: Env = process.env): AppConfig {
     apiTokens: parsed.API_TOKENS.split(",")
       .map((token) => token.trim())
       .filter((token) => token.length > 0),
+    orphanTtlHours: parsed.UPLOAD_ORPHAN_TTL_HOURS,
   };
 }

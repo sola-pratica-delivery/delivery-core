@@ -22,6 +22,7 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     host: "127.0.0.1",
     port: 0,
     logLevel: "silent",
+    orphanTtlHours: 24,
     ...overrides,
   };
 }

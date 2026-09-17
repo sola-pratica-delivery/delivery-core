@@ -28,6 +28,7 @@ export interface AppConfig extends UploadServiceConfig {
   host: string;
   port: number;
   logLevel: string;
+  orphanTtlHours: number;
   onUploadComplete?: (metadata: UploadMetadata) => void | Promise<void>;
   onUploadValidated?: (
     result: MediaValidationResult,

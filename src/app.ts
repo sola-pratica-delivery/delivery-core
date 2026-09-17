@@ -7,6 +7,11 @@ import { createTusServer } from "./upload-server.js";
 import { checksumContext, parseChecksumHeader } from "./checksum.js";
 import { ValidationStore } from "./probe/store.js";
 import { FileJobStore } from "./job/store.js";
+import {
+  PurgeConflictError,
+  PurgeNotFoundError,
+  StorageCleanupService,
+} from "./cleanup/service.js";
 
 export function buildApp(config: AppConfig): FastifyInstance {
   const app = Fastify({ logger: { level: config.logLevel } });
@@ -14,6 +19,9 @@ export function buildApp(config: AppConfig): FastifyInstance {
   const authenticate = createAuth(config);
   const validationStore = new ValidationStore(config.storageDir);
   const jobStore = new FileJobStore(config.storageDir);
+  const cleanupService = new StorageCleanupService(config.storageDir, jobStore, {
+    orphanTtlMs: config.orphanTtlHours * 60 * 60 * 1000,
+  });
 
   async function tusGateway(request: FastifyRequest, reply: FastifyReply) {
     await authenticate(request, reply);
@@ -105,6 +113,51 @@ export function buildApp(config: AppConfig): FastifyInstance {
         return reply.status(404).send({ uploadId: id, status: "NOT_FOUND" });
       }
       return reply.status(200).send(job);
+    },
+  });
+
+  app.post(`${config.uploadPath}/cleanup`, {
+    onRequest: async (request, reply) => {
+      await authenticate(request, reply);
+    },
+    handler: async (request, reply) => {
+      if (reply.sent) {
+        return;
+      }
+      const body = (request.body ?? {}) as { maxAgeHours?: number };
+      const maxAgeHours =
+        typeof body.maxAgeHours === "number" ? body.maxAgeHours : undefined;
+      const maxAgeMs =
+        maxAgeHours !== undefined ? maxAgeHours * 60 * 60 * 1000 : undefined;
+      const result = await cleanupService.cleanOrphans(maxAgeMs);
+      return reply.status(200).send(result);
+    },
+  });
+
+  app.post(`${config.uploadPath}/:id/purge`, {
+    onRequest: async (request, reply) => {
+      await authenticate(request, reply);
+    },
+    handler: async (request, reply) => {
+      if (reply.sent) {
+        return;
+      }
+      const { id } = request.params as { id?: string };
+      if (typeof id !== "string" || id.length === 0) {
+        return reply.status(404).send({ uploadId: id ?? "", status: "NOT_FOUND" });
+      }
+      try {
+        const result = await cleanupService.purgeUpload(id);
+        return reply.status(200).send(result);
+      } catch (error) {
+        if (error instanceof PurgeNotFoundError) {
+          return reply.status(404).send({ uploadId: id, status: "NOT_FOUND" });
+        }
+        if (error instanceof PurgeConflictError) {
+          return reply.status(409).send({ uploadId: id, status: "UPLOADING" });
+        }
+        throw error;
+      }
     },
   });
 
