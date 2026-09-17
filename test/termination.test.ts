@@ -34,7 +34,10 @@ describe("Terminação de upload (termination extension)", () => {
     expect(head.status).toBe(404);
 
     const { listStorage } = await import("./helpers.js");
-    expect(listStorage(ctx)).toHaveLength(0);
+    const remaining = listStorage(ctx).filter(
+      (file) => !file.endsWith(".job.json"),
+    );
+    expect(remaining).toHaveLength(0);
   });
 
   it("DELETE em upload completo também retorna 204", async () => {

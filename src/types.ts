@@ -1,4 +1,6 @@
 import type { MediaValidationResult } from "./probe/types.js";
+import type { JobRecord } from "./job/types.js";
+import type { UploadCompletedEventPayload } from "./events/types.js";
 
 export interface UploadMetadata {
   uploadId: string;
@@ -30,6 +32,10 @@ export interface AppConfig extends UploadServiceConfig {
   onUploadValidated?: (
     result: MediaValidationResult,
     metadata: UploadMetadata,
+  ) => void | Promise<void>;
+  onJobUpdated?: (job: JobRecord) => void | Promise<void>;
+  onEventEmitted?: (
+    event: UploadCompletedEventPayload,
   ) => void | Promise<void>;
 }
 

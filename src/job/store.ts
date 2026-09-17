@@ -1,0 +1,114 @@
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import type {
+  JobRecord,
+  JobStateTransition,
+  JobStatus,
+  JobStore,
+} from "./types.js";
+
+export class FileJobStore implements JobStore {
+  private readonly directory: string;
+
+  constructor(directory: string) {
+    this.directory = directory;
+  }
+
+  private jobPath(jobId: string): string {
+    return path.join(this.directory, `${jobId}.job.json`);
+  }
+
+  async create(
+    job: Omit<JobRecord, "createdAt" | "updatedAt" | "transitions">,
+  ): Promise<JobRecord> {
+    await mkdir(this.directory, { recursive: true });
+    const now = new Date().toISOString();
+    const record: JobRecord = {
+      ...job,
+      jobId: job.jobId ?? randomUUID(),
+      transitions: [
+        { from: null, to: job.status, timestamp: now, reason: "Upload started" },
+      ],
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this.save(record);
+    return record;
+  }
+
+  async get(jobIdOrUploadId: string): Promise<JobRecord | null> {
+    const direct = await this.readFile(this.jobPath(jobIdOrUploadId));
+    if (direct !== null) {
+      return direct;
+    }
+
+    let files: string[];
+    try {
+      files = await readdir(this.directory);
+    } catch {
+      return null;
+    }
+
+    for (const file of files) {
+      if (!file.endsWith(".job.json")) {
+        continue;
+      }
+      const record = await this.readFile(path.join(this.directory, file));
+      if (record !== null && record.uploadId === jobIdOrUploadId) {
+        return record;
+      }
+    }
+
+    return null;
+  }
+
+  async transition(
+    uploadId: string,
+    to: JobStatus,
+    reason?: string,
+    updates?: Partial<JobRecord>,
+  ): Promise<JobRecord> {
+    const existing = await this.get(uploadId);
+    if (existing === null) {
+      throw new Error(`Job not found for upload ${uploadId}`);
+    }
+
+    const now = new Date().toISOString();
+    const transition: JobStateTransition = {
+      from: existing.status,
+      to,
+      timestamp: now,
+      ...(reason !== undefined ? { reason } : {}),
+    };
+
+    const record: JobRecord = {
+      ...existing,
+      ...updates,
+      status: to,
+      updatedAt: now,
+      transitions: [...existing.transitions, transition],
+    };
+
+    await this.save(record);
+    return record;
+  }
+
+  private async readFile(filePath: string): Promise<JobRecord | null> {
+    try {
+      const content = await readFile(filePath, "utf8");
+      return JSON.parse(content) as JobRecord;
+    } catch {
+      return null;
+    }
+  }
+
+  private async save(record: JobRecord): Promise<void> {
+    await mkdir(this.directory, { recursive: true });
+    await writeFile(
+      this.jobPath(record.jobId),
+      `${JSON.stringify(record, null, 2)}\n`,
+      "utf8",
+    );
+  }
+}

@@ -6,12 +6,14 @@ import { requireOffsetContentType, requireTusResumable } from "./protocol.js";
 import { createTusServer } from "./upload-server.js";
 import { checksumContext, parseChecksumHeader } from "./checksum.js";
 import { ValidationStore } from "./probe/store.js";
+import { FileJobStore } from "./job/store.js";
 
 export function buildApp(config: AppConfig): FastifyInstance {
   const app = Fastify({ logger: { level: config.logLevel } });
   const tus = createTusServer(config);
   const authenticate = createAuth(config);
   const validationStore = new ValidationStore(config.storageDir);
+  const jobStore = new FileJobStore(config.storageDir);
 
   async function tusGateway(request: FastifyRequest, reply: FastifyReply) {
     await authenticate(request, reply);
@@ -83,6 +85,26 @@ export function buildApp(config: AppConfig): FastifyInstance {
         return reply.status(200).send(report);
       }
       return reply.status(422).send(report);
+    },
+  });
+
+  app.get(`${config.uploadPath}/:id/job`, {
+    onRequest: async (request, reply) => {
+      await authenticate(request, reply);
+    },
+    handler: async (request, reply) => {
+      if (reply.sent) {
+        return;
+      }
+      const { id } = request.params as { id?: string };
+      if (typeof id !== "string" || id.length === 0) {
+        return reply.status(404).send({ uploadId: id ?? "", status: "NOT_FOUND" });
+      }
+      const job = await jobStore.get(id);
+      if (job === null) {
+        return reply.status(404).send({ uploadId: id, status: "NOT_FOUND" });
+      }
+      return reply.status(200).send(job);
     },
   });
 
