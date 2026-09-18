@@ -58,15 +58,62 @@ export interface JobError {
   details?: Record<string, unknown>;
 }
 
+export interface YouTubeVideoPublication {
+  videoId: string;
+  videoUrl: string;
+  title?: string;
+  publishedAt?: string;
+  privacyStatus?: "public" | "unlisted" | "private" | string;
+}
+
+export interface YouTubeShortPublication {
+  shortId: string;
+  videoId: string;
+  videoUrl: string;
+  title?: string;
+  publishedAt?: string;
+  cutIndex?: number;
+}
+
+export interface CutStatisticItem {
+  cutId: string;
+  startTimeSeconds?: number;
+  endTimeSeconds?: number;
+  durationSeconds?: number;
+  aspectRatio?: string;
+  headline?: string;
+  shortId?: string;
+  youtubeVideoId?: string;
+  youtubeUrl?: string;
+}
+
+export interface CutsStatistics {
+  totalCuts: number;
+  totalDurationSeconds?: number;
+  averageDurationSeconds?: number;
+  items?: CutStatisticItem[];
+}
+
+export interface JobPublicationArchive {
+  youtube?: {
+    longVideo?: YouTubeVideoPublication;
+    shorts?: YouTubeShortPublication[];
+  };
+  cuts?: CutsStatistics;
+  archivedAt: string;
+}
+
 export interface JobRecord {
   jobId: string;
   uploadId: string;
   status: JobStatus;
   filePath: string;
   metadata: UploadJobMetadata;
+  publication?: JobPublicationArchive;
   transitions: JobStateTransition[];
   createdAt: string;
   updatedAt: string;
+  completedAt?: string;
   error?: JobError;
   isPurged?: boolean;
   purgedAt?: string;
@@ -85,6 +132,13 @@ export interface JobStore {
     transitionMetadata?: Record<string, unknown>,
   ): Promise<JobRecord>;
   update(uploadId: string, updates: Partial<JobRecord>): Promise<JobRecord>;
+  completeJob(
+    uploadId: string,
+    publication?: Omit<JobPublicationArchive, "archivedAt"> & {
+      archivedAt?: string;
+    },
+    reason?: string,
+  ): Promise<JobRecord>;
 }
 
 export function toUploadJobMetadata(

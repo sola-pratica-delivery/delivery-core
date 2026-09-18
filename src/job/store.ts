@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
+  JobPublicationArchive,
   JobRecord,
   JobStateTransition,
   JobStatus,
@@ -122,6 +123,54 @@ export class FileJobStore implements JobStore {
       status: existing.status,
       transitions: existing.transitions,
       updatedAt: new Date().toISOString(),
+    };
+
+    await this.save(record);
+    return record;
+  }
+
+  async completeJob(
+    uploadId: string,
+    publication?: Omit<JobPublicationArchive, "archivedAt"> & {
+      archivedAt?: string;
+    },
+    reason?: string,
+  ): Promise<JobRecord> {
+    const existing = await this.get(uploadId);
+    if (existing === null) {
+      throw new Error(`Job not found for upload ${uploadId}`);
+    }
+
+    JobStateMachine.validateTransition(existing.status, "COMPLETED");
+
+    const now = new Date().toISOString();
+    const previous = existing.transitions[existing.transitions.length - 1];
+    const durationMs =
+      previous !== undefined
+        ? JobStateMachine.calculateDuration(previous.timestamp, now)
+        : undefined;
+    const transition: JobStateTransition = {
+      from: existing.status,
+      to: "COMPLETED",
+      timestamp: now,
+      ...(durationMs !== undefined ? { durationMs } : {}),
+      ...(reason !== undefined ? { reason } : {}),
+    };
+
+    const record: JobRecord = {
+      ...existing,
+      status: "COMPLETED",
+      ...(publication !== undefined
+        ? {
+            publication: {
+              ...publication,
+              archivedAt: publication.archivedAt ?? now,
+            },
+          }
+        : {}),
+      completedAt: now,
+      updatedAt: now,
+      transitions: [...existing.transitions, transition],
     };
 
     await this.save(record);

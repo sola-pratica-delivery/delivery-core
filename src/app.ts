@@ -9,6 +9,7 @@ import { checksumContext, parseChecksumHeader } from "./checksum.js";
 import { ValidationStore } from "./probe/store.js";
 import { FileJobStore } from "./job/store.js";
 import { JOB_STATUSES } from "./job/types.js";
+import type { JobPublicationArchive } from "./job/types.js";
 import { InvalidStateTransitionError } from "./job/state-machine.js";
 import { InMemoryQueueManager } from "./queue/manager.js";
 import { QUEUE_NAMES } from "./queue/types.js";
@@ -19,10 +20,58 @@ import {
   StorageCleanupService,
 } from "./cleanup/service.js";
 
+const youtubeVideoPublicationSchema = z.object({
+  videoId: z.string().min(1),
+  videoUrl: z.string().url().or(z.string().min(1)),
+  title: z.string().optional(),
+  publishedAt: z.string().optional(),
+  privacyStatus: z.string().optional(),
+});
+
+const youtubeShortPublicationSchema = z.object({
+  shortId: z.string().min(1),
+  videoId: z.string().min(1),
+  videoUrl: z.string().url().or(z.string().min(1)),
+  title: z.string().optional(),
+  publishedAt: z.string().optional(),
+  cutIndex: z.number().int().nonnegative().optional(),
+});
+
+const cutStatisticItemSchema = z.object({
+  cutId: z.string().min(1),
+  startTimeSeconds: z.number().nonnegative().optional(),
+  endTimeSeconds: z.number().nonnegative().optional(),
+  durationSeconds: z.number().nonnegative().optional(),
+  aspectRatio: z.string().optional(),
+  headline: z.string().optional(),
+  shortId: z.string().optional(),
+  youtubeVideoId: z.string().optional(),
+  youtubeUrl: z.string().optional(),
+});
+
+const cutsStatisticsSchema = z.object({
+  totalCuts: z.number().int().nonnegative(),
+  totalDurationSeconds: z.number().nonnegative().optional(),
+  averageDurationSeconds: z.number().nonnegative().optional(),
+  items: z.array(cutStatisticItemSchema).optional(),
+});
+
+const publicationSchema = z.object({
+  youtube: z
+    .object({
+      longVideo: youtubeVideoPublicationSchema.optional(),
+      shorts: z.array(youtubeShortPublicationSchema).optional(),
+    })
+    .optional(),
+  cuts: cutsStatisticsSchema.optional(),
+  archivedAt: z.string().datetime({ offset: true }).optional(),
+});
+
 const transitionBodySchema = z.object({
   to: z.enum(JOB_STATUSES),
   reason: z.string().min(1).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  publication: publicationSchema.optional(),
 });
 
 export function buildApp(config: AppConfig): FastifyInstance {
@@ -230,13 +279,24 @@ export function buildApp(config: AppConfig): FastifyInstance {
         return reply.status(404).send({ uploadId: id, status: "NOT_FOUND" });
       }
       try {
-        const updated = await jobStore.transition(
-          id,
-          parsed.data.to,
-          parsed.data.reason,
-          undefined,
-          parsed.data.metadata,
-        );
+        const updated =
+          parsed.data.to === "COMPLETED"
+            ? await jobStore.completeJob(
+                id,
+                parsed.data.publication as
+                  | (Omit<JobPublicationArchive, "archivedAt"> & {
+                      archivedAt?: string;
+                    })
+                  | undefined,
+                parsed.data.reason,
+              )
+            : await jobStore.transition(
+                id,
+                parsed.data.to,
+                parsed.data.reason,
+                undefined,
+                parsed.data.metadata,
+              );
         return reply.status(200).send(updated);
       } catch (error) {
         if (error instanceof InvalidStateTransitionError) {
