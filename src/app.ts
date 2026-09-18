@@ -11,6 +11,7 @@ import { checksumContext, parseChecksumHeader } from "./checksum.js";
 import { ValidationStore } from "./probe/store.js";
 import { QaStore } from "./qa/store.js";
 import { DEFAULT_QA_OPTIONS, verifyVideoQuality } from "./qa/video-verifier.js";
+import { DEFAULT_AUDIO_QA_OPTIONS, verifyAudioQuality } from "./qa/audio-verifier.js";
 import { FileJobStore } from "./job/store.js";
 import { JOB_STATUSES } from "./job/types.js";
 import type { JobPublicationArchive } from "./job/types.js";
@@ -348,7 +349,37 @@ export function buildApp(config: AppConfig): FastifyInstance {
       if (typeof id !== "string" || id.length === 0) {
         return reply.status(404).send({ uploadId: id ?? "", status: "NOT_FOUND" });
       }
-      const report = await qaStore.read(id);
+      const consolidated = await qaStore.readConsolidated(id);
+      if (consolidated === null) {
+        return reply.status(404).send({ uploadId: id, status: "NOT_FOUND" });
+      }
+      const { video, audio } = consolidated;
+      const report =
+        video !== undefined && audio !== undefined
+          ? consolidated
+          : video !== undefined
+            ? video
+            : audio ?? consolidated;
+      if (report.passed) {
+        return reply.status(200).send(report);
+      }
+      return reply.status(422).send(report);
+    },
+  });
+
+  app.get(`${config.uploadPath}/:id/qa/audio`, {
+    onRequest: async (request, reply) => {
+      await authenticate(request, reply);
+    },
+    handler: async (request, reply) => {
+      if (reply.sent) {
+        return;
+      }
+      const { id } = request.params as { id?: string };
+      if (typeof id !== "string" || id.length === 0) {
+        return reply.status(404).send({ uploadId: id ?? "", status: "NOT_FOUND" });
+      }
+      const report = await qaStore.readAudio(id);
       if (report === null) {
         return reply.status(404).send({ uploadId: id, status: "NOT_FOUND" });
       }
@@ -382,6 +413,36 @@ export function buildApp(config: AppConfig): FastifyInstance {
       });
       const persisted = { ...report, uploadId: id };
       await qaStore.save(id, persisted);
+      if (persisted.passed) {
+        return reply.status(200).send(persisted);
+      }
+      return reply.status(422).send(persisted);
+    },
+  });
+
+  app.post(`${config.uploadPath}/:id/qa/audio`, {
+    onRequest: async (request, reply) => {
+      await authenticate(request, reply);
+    },
+    handler: async (request, reply) => {
+      if (reply.sent) {
+        return;
+      }
+      const { id } = request.params as { id?: string };
+      if (typeof id !== "string" || id.length === 0) {
+        return reply.status(404).send({ uploadId: id ?? "", status: "NOT_FOUND" });
+      }
+      const filePath = await resolveUploadFile(id);
+      if (filePath === null) {
+        return reply.status(404).send({ uploadId: id, status: "NOT_FOUND" });
+      }
+      const report = await verifyAudioQuality(filePath, {
+        ffmpegPath: DEFAULT_AUDIO_QA_OPTIONS.ffmpegPath,
+        ffprobePath: DEFAULT_AUDIO_QA_OPTIONS.ffprobePath,
+        timeoutMs: DEFAULT_AUDIO_QA_OPTIONS.timeoutMs,
+      });
+      const persisted = { ...report, uploadId: id };
+      await qaStore.saveAudio(id, persisted);
       if (persisted.passed) {
         return reply.status(200).send(persisted);
       }

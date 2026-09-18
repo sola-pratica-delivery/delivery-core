@@ -19,7 +19,7 @@ export class FfprobeError extends Error {
 
 const PROBE_ENTRIES =
   "format=format_name,duration,bit_rate,size:" +
-  "stream=index,codec_name,codec_type,width,height,channels,bit_rate,pix_fmt,avg_frame_rate";
+  "stream=index,codec_name,codec_type,width,height,channels,sample_rate,bit_rate,pix_fmt,avg_frame_rate";
 
 export function runFfprobe(
   filePath: string,

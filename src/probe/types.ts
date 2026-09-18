@@ -65,6 +65,7 @@ export interface RawFfprobeStream {
   height?: number;
   duration?: string;
   channels?: number;
+  sample_rate?: string;
   bit_rate?: string;
   pix_fmt?: string;
   avg_frame_rate?: string;
