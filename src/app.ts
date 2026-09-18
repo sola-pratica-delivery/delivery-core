@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { FastifyReply, FastifyRequest } from "fastify";
@@ -12,6 +12,10 @@ import { ValidationStore } from "./probe/store.js";
 import { QaStore } from "./qa/store.js";
 import { DEFAULT_QA_OPTIONS, verifyVideoQuality } from "./qa/video-verifier.js";
 import { DEFAULT_AUDIO_QA_OPTIONS, verifyAudioQuality } from "./qa/audio-verifier.js";
+import {
+  DEFAULT_THUMBNAIL_QA_OPTIONS,
+  verifyThumbnail,
+} from "./qa/thumbnail-verifier.js";
 import { FileJobStore } from "./job/store.js";
 import { JOB_STATUSES } from "./job/types.js";
 import type { JobPublicationArchive } from "./job/types.js";
@@ -138,6 +142,59 @@ export function buildApp(config: AppConfig): FastifyInstance {
       } catch {
         // Try the next candidate.
       }
+    }
+    return null;
+  }
+
+  async function resolveThumbnailFile(
+    uploadId: string,
+    payloadPath?: string,
+  ): Promise<string | null> {
+    if (payloadPath !== undefined && payloadPath.length > 0) {
+      const candidate = path.isAbsolute(payloadPath)
+        ? payloadPath
+        : path.join(config.storageDir, payloadPath);
+      try {
+        const info = await stat(candidate);
+        if (info.isFile()) {
+          return candidate;
+        }
+      } catch {
+        // Fall through to the standard naming patterns.
+      }
+    }
+    const explicitNames = [
+      `${uploadId}.thumbnail.jpg`,
+      `${uploadId}.thumbnail.png`,
+      `${uploadId}.thumb.jpg`,
+      `${uploadId}.thumb.png`,
+    ];
+    for (const name of explicitNames) {
+      const candidate = path.join(config.storageDir, name);
+      try {
+        const info = await stat(candidate);
+        if (info.isFile()) {
+          return candidate;
+        }
+      } catch {
+        // Try the next candidate.
+      }
+    }
+    const prefixes = [`${uploadId}.thumb.`, `${uploadId}.thumbnail.`];
+    try {
+      const entries = await readdir(config.storageDir);
+      for (const entry of entries) {
+        if (!prefixes.some((prefix) => entry.startsWith(prefix))) {
+          continue;
+        }
+        const candidate = path.join(config.storageDir, entry);
+        const info = await stat(candidate).catch(() => null);
+        if (info?.isFile() === true) {
+          return candidate;
+        }
+      }
+    } catch {
+      // No candidates matched.
     }
     return null;
   }
@@ -353,13 +410,18 @@ export function buildApp(config: AppConfig): FastifyInstance {
       if (consolidated === null) {
         return reply.status(404).send({ uploadId: id, status: "NOT_FOUND" });
       }
-      const { video, audio } = consolidated;
+      const { video, audio, thumbnail } = consolidated;
+      const presentSections = [video, audio, thumbnail].filter(
+        (section) => section !== undefined,
+      );
       const report =
-        video !== undefined && audio !== undefined
+        presentSections.length > 1
           ? consolidated
           : video !== undefined
             ? video
-            : audio ?? consolidated;
+            : audio !== undefined
+              ? audio
+              : thumbnail ?? consolidated;
       if (report.passed) {
         return reply.status(200).send(report);
       }
@@ -443,6 +505,62 @@ export function buildApp(config: AppConfig): FastifyInstance {
       });
       const persisted = { ...report, uploadId: id };
       await qaStore.saveAudio(id, persisted);
+      if (persisted.passed) {
+        return reply.status(200).send(persisted);
+      }
+      return reply.status(422).send(persisted);
+    },
+  });
+
+  app.get(`${config.uploadPath}/:id/qa/thumbnail`, {
+    onRequest: async (request, reply) => {
+      await authenticate(request, reply);
+    },
+    handler: async (request, reply) => {
+      if (reply.sent) {
+        return;
+      }
+      const { id } = request.params as { id?: string };
+      if (typeof id !== "string" || id.length === 0) {
+        return reply.status(404).send({ uploadId: id ?? "", status: "NOT_FOUND" });
+      }
+      const report = await qaStore.readThumbnail(id);
+      if (report === null) {
+        return reply.status(404).send({ uploadId: id, status: "NOT_FOUND" });
+      }
+      if (report.passed) {
+        return reply.status(200).send(report);
+      }
+      return reply.status(422).send(report);
+    },
+  });
+
+  app.post(`${config.uploadPath}/:id/qa/thumbnail`, {
+    onRequest: async (request, reply) => {
+      await authenticate(request, reply);
+    },
+    handler: async (request, reply) => {
+      if (reply.sent) {
+        return;
+      }
+      const { id } = request.params as { id?: string };
+      if (typeof id !== "string" || id.length === 0) {
+        return reply.status(404).send({ uploadId: id ?? "", status: "NOT_FOUND" });
+      }
+      const body = (request.body ?? {}) as { filePath?: string };
+      const payloadPath =
+        typeof body.filePath === "string" ? body.filePath : undefined;
+      const filePath = await resolveThumbnailFile(id, payloadPath);
+      if (filePath === null) {
+        return reply.status(404).send({ uploadId: id, status: "NOT_FOUND" });
+      }
+      const report = await verifyThumbnail(filePath, {
+        ffmpegPath: DEFAULT_THUMBNAIL_QA_OPTIONS.ffmpegPath,
+        ffprobePath: DEFAULT_THUMBNAIL_QA_OPTIONS.ffprobePath,
+        timeoutMs: DEFAULT_THUMBNAIL_QA_OPTIONS.timeoutMs,
+      });
+      const persisted = { ...report, uploadId: id };
+      await qaStore.saveThumbnail(id, persisted);
       if (persisted.passed) {
         return reply.status(200).send(persisted);
       }

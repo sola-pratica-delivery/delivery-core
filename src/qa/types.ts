@@ -105,10 +105,71 @@ export interface AudioQaOptions {
   timeoutMs?: number;
 }
 
+export interface ThumbnailDimensionCheck {
+  passed: boolean;
+  width: number;
+  height: number;
+  expectedWidth: number;
+  expectedHeight: number;
+  aspectRatio: string;
+}
+
+export interface ThumbnailFileSizeCheck {
+  passed: boolean;
+  fileSizeBytes: number;
+  maxAllowedBytes: number;
+}
+
+export interface ThumbnailFormatCheck {
+  passed: boolean;
+  detectedFormat: "jpeg" | "png" | null;
+  mimeType?: string;
+}
+
+export interface ThumbnailContrastCheck {
+  passed: boolean;
+  yMin: number;
+  yMax: number;
+  yAvg: number;
+  luminanceRange: number;
+  minAllowedRange: number;
+}
+
+export interface ThumbnailQaDetails {
+  width: number;
+  height: number;
+  fileSizeBytes: number;
+  format: "jpeg" | "png" | null;
+}
+
+export interface ThumbnailQaReport {
+  uploadId?: string;
+  passed: boolean;
+  checkedAt: string;
+  dimensions: ThumbnailDimensionCheck;
+  fileSize: ThumbnailFileSizeCheck;
+  format: ThumbnailFormatCheck;
+  contrast: ThumbnailContrastCheck;
+  details: ThumbnailQaDetails;
+  failureReasons: string[];
+}
+
+export interface ThumbnailQaOptions {
+  expectedWidth?: number;
+  expectedHeight?: number;
+  maxFileSizeBytes?: number;
+  minContrastRange?: number;
+  allowedFormats?: Array<"jpeg" | "png">;
+  ffmpegPath?: string;
+  ffprobePath?: string;
+  timeoutMs?: number;
+}
+
 export interface ConsolidatedQaReport {
   uploadId?: string;
   video?: VideoQaReport;
   audio?: AudioQaReport;
+  thumbnail?: ThumbnailQaReport;
   passed: boolean;
   checkedAt: string;
 }

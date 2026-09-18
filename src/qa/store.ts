@@ -3,6 +3,7 @@ import path from "node:path";
 import type {
   AudioQaReport,
   ConsolidatedQaReport,
+  ThumbnailQaReport,
   VideoQaReport,
 } from "./types.js";
 
@@ -10,6 +11,7 @@ interface StoredQaReport {
   uploadId?: string;
   video?: VideoQaReport;
   audio?: AudioQaReport;
+  thumbnail?: ThumbnailQaReport;
   passed: boolean;
   checkedAt: string;
 }
@@ -50,7 +52,13 @@ export class QaStore {
       uploadId,
       video,
       ...(existing?.audio !== undefined ? { audio: existing.audio } : {}),
-      passed: video.passed && (existing?.audio?.passed ?? true),
+      ...(existing?.thumbnail !== undefined
+        ? { thumbnail: existing.thumbnail }
+        : {}),
+      passed:
+        video.passed &&
+        (existing?.audio?.passed ?? true) &&
+        (existing?.thumbnail?.passed ?? true),
       checkedAt: report.checkedAt,
     };
     await this.writeStored(uploadId, stored);
@@ -63,7 +71,33 @@ export class QaStore {
       uploadId,
       ...(existing?.video !== undefined ? { video: existing.video } : {}),
       audio,
-      passed: (existing?.video?.passed ?? true) && audio.passed,
+      ...(existing?.thumbnail !== undefined
+        ? { thumbnail: existing.thumbnail }
+        : {}),
+      passed:
+        (existing?.video?.passed ?? true) &&
+        audio.passed &&
+        (existing?.thumbnail?.passed ?? true),
+      checkedAt: report.checkedAt,
+    };
+    await this.writeStored(uploadId, stored);
+  }
+
+  async saveThumbnail(
+    uploadId: string,
+    report: ThumbnailQaReport,
+  ): Promise<void> {
+    const existing = await this.readRaw(uploadId);
+    const thumbnail = { ...report, uploadId };
+    const stored: StoredQaReport = {
+      uploadId,
+      ...(existing?.video !== undefined ? { video: existing.video } : {}),
+      ...(existing?.audio !== undefined ? { audio: existing.audio } : {}),
+      thumbnail,
+      passed:
+        (existing?.video?.passed ?? true) &&
+        (existing?.audio?.passed ?? true) &&
+        thumbnail.passed,
       checkedAt: report.checkedAt,
     };
     await this.writeStored(uploadId, stored);
@@ -76,11 +110,16 @@ export class QaStore {
     const existing = await this.readRaw(uploadId);
     const video = report.video ?? existing?.video;
     const audio = report.audio ?? existing?.audio;
+    const thumbnail = report.thumbnail ?? existing?.thumbnail;
     const stored: StoredQaReport = {
       uploadId,
       ...(video !== undefined ? { video } : {}),
       ...(audio !== undefined ? { audio } : {}),
-      passed: (video?.passed ?? true) && (audio?.passed ?? true),
+      ...(thumbnail !== undefined ? { thumbnail } : {}),
+      passed:
+        (video?.passed ?? true) &&
+        (audio?.passed ?? true) &&
+        (thumbnail?.passed ?? true),
       checkedAt: report.checkedAt,
     };
     await this.writeStored(uploadId, stored);
@@ -96,6 +135,11 @@ export class QaStore {
     return raw?.audio ?? null;
   }
 
+  async readThumbnail(uploadId: string): Promise<ThumbnailQaReport | null> {
+    const raw = await this.readRaw(uploadId);
+    return raw?.thumbnail ?? null;
+  }
+
   async readConsolidated(
     uploadId: string,
   ): Promise<ConsolidatedQaReport | null> {
@@ -107,6 +151,7 @@ export class QaStore {
       ...(raw.uploadId !== undefined ? { uploadId: raw.uploadId } : {}),
       ...(raw.video !== undefined ? { video: raw.video } : {}),
       ...(raw.audio !== undefined ? { audio: raw.audio } : {}),
+      ...(raw.thumbnail !== undefined ? { thumbnail: raw.thumbnail } : {}),
       passed: raw.passed,
       checkedAt: raw.checkedAt,
     };
