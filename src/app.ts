@@ -1,3 +1,5 @@
+import { stat } from "node:fs/promises";
+import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -7,6 +9,8 @@ import { requireOffsetContentType, requireTusResumable } from "./protocol.js";
 import { createTusServer } from "./upload-server.js";
 import { checksumContext, parseChecksumHeader } from "./checksum.js";
 import { ValidationStore } from "./probe/store.js";
+import { QaStore } from "./qa/store.js";
+import { DEFAULT_QA_OPTIONS, verifyVideoQuality } from "./qa/video-verifier.js";
 import { FileJobStore } from "./job/store.js";
 import { JOB_STATUSES } from "./job/types.js";
 import type { JobPublicationArchive } from "./job/types.js";
@@ -80,6 +84,7 @@ export function buildApp(config: AppConfig): FastifyInstance {
   const authenticate = createAuth(config);
   const validationStore = new ValidationStore(config.storageDir);
   const jobStore = new FileJobStore(config.storageDir);
+  const qaStore = new QaStore(config.storageDir);
   const cleanupService = new StorageCleanupService(config.storageDir, jobStore, {
     orphanTtlMs: config.orphanTtlHours * 60 * 60 * 1000,
   });
@@ -116,6 +121,25 @@ export function buildApp(config: AppConfig): FastifyInstance {
   app.addHook("onClose", async () => {
     await queueManager.close();
   });
+
+  async function resolveUploadFile(uploadId: string): Promise<string | null> {
+    const job = await jobStore.get(uploadId);
+    const candidates = [job?.filePath, path.join(config.storageDir, uploadId)];
+    for (const candidate of candidates) {
+      if (candidate === undefined || candidate.length === 0) {
+        continue;
+      }
+      try {
+        const info = await stat(candidate);
+        if (info.isFile()) {
+          return candidate;
+        }
+      } catch {
+        // Try the next candidate.
+      }
+    }
+    return null;
+  }
 
   async function tusGateway(request: FastifyRequest, reply: FastifyReply) {
     await authenticate(request, reply);
@@ -309,6 +333,59 @@ export function buildApp(config: AppConfig): FastifyInstance {
         }
         throw error;
       }
+    },
+  });
+
+  app.get(`${config.uploadPath}/:id/qa`, {
+    onRequest: async (request, reply) => {
+      await authenticate(request, reply);
+    },
+    handler: async (request, reply) => {
+      if (reply.sent) {
+        return;
+      }
+      const { id } = request.params as { id?: string };
+      if (typeof id !== "string" || id.length === 0) {
+        return reply.status(404).send({ uploadId: id ?? "", status: "NOT_FOUND" });
+      }
+      const report = await qaStore.read(id);
+      if (report === null) {
+        return reply.status(404).send({ uploadId: id, status: "NOT_FOUND" });
+      }
+      if (report.passed) {
+        return reply.status(200).send(report);
+      }
+      return reply.status(422).send(report);
+    },
+  });
+
+  app.post(`${config.uploadPath}/:id/qa/video`, {
+    onRequest: async (request, reply) => {
+      await authenticate(request, reply);
+    },
+    handler: async (request, reply) => {
+      if (reply.sent) {
+        return;
+      }
+      const { id } = request.params as { id?: string };
+      if (typeof id !== "string" || id.length === 0) {
+        return reply.status(404).send({ uploadId: id ?? "", status: "NOT_FOUND" });
+      }
+      const filePath = await resolveUploadFile(id);
+      if (filePath === null) {
+        return reply.status(404).send({ uploadId: id, status: "NOT_FOUND" });
+      }
+      const report = await verifyVideoQuality(filePath, {
+        ffmpegPath: DEFAULT_QA_OPTIONS.ffmpegPath,
+        ffprobePath: DEFAULT_QA_OPTIONS.ffprobePath,
+        timeoutMs: DEFAULT_QA_OPTIONS.timeoutMs,
+      });
+      const persisted = { ...report, uploadId: id };
+      await qaStore.save(id, persisted);
+      if (persisted.passed) {
+        return reply.status(200).send(persisted);
+      }
+      return reply.status(422).send(persisted);
     },
   });
 
