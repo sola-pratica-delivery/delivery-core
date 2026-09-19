@@ -31,6 +31,8 @@ import { TUS_CLIENT_BUNDLE } from "./ui/tus-client-bundle.js";
 import { InMemoryQueueManager } from "./queue/manager.js";
 import { QUEUE_NAMES } from "./queue/types.js";
 import type { VideoProcessingJobData, YouTubePublishJobData } from "./queue/types.js";
+import { RedisQueuePublisher } from "./queue/redis-publisher.js";
+import { InMemoryEventDispatcher } from "./events/dispatcher.js";
 import {
   PurgeConflictError,
   PurgeNotFoundError,
@@ -125,7 +127,9 @@ const seoSynthesisBodySchema = z.object({
 
 export function buildApp(config: AppConfig): FastifyInstance {
   const app = Fastify({ logger: { level: config.logLevel } });
-  const tus = createTusServer(config);
+  const eventDispatcher =
+    config.eventDispatcher ?? new InMemoryEventDispatcher();
+  const tus = createTusServer({ ...config, eventDispatcher });
   const authenticate = createAuth(config);
   const validationStore = new ValidationStore(config.storageDir);
   const jobStore = new FileJobStore(config.storageDir);
@@ -164,8 +168,29 @@ export function buildApp(config: AppConfig): FastifyInstance {
     },
   });
   app.decorate("queueManager", queueManager);
+  const redisPublisher =
+    config.redisPublisher ??
+    new RedisQueuePublisher({
+      config: config.queue,
+      logger: {
+        warn: (obj, msg) => app.log.warn(obj, msg),
+        error: (obj, msg) => app.log.error(obj, msg),
+        info: (obj, msg) => app.log.info(obj, msg),
+      },
+    });
+  eventDispatcher.subscribe("UPLOAD_COMPLETED", (event) => {
+    void redisPublisher.publishVideoProcessing({
+      jobId: event.jobId,
+      uploadId: event.uploadId,
+      filePath: event.filePath,
+      metadata: { ...event.metadata },
+      createdAt: event.occurredAt,
+    });
+  });
+  app.decorate("redisPublisher", redisPublisher);
   app.addHook("onClose", async () => {
     await queueManager.close();
+    await redisPublisher.close();
   });
 
   async function serveUploadUi(_request: FastifyRequest, reply: FastifyReply) {

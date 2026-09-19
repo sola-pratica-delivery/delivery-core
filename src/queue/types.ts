@@ -1,3 +1,10 @@
+export type {
+  QueuePublisher,
+  RedisClientLike,
+  RedisQueuePublisherLogger,
+  RedisQueuePublisherOptions,
+} from "./redis-publisher.js";
+
 export const QUEUE_NAMES = {
   VIDEO_PROCESSING: "video-processing",
   YOUTUBE_PUBLISH: "youtube-publish",

@@ -61,7 +61,22 @@ export async function startServer(
 
 export async function stopServer(context: TestContext): Promise<void> {
   await context.app.close();
-  fs.rmSync(context.config.storageDir, { recursive: true, force: true });
+  const dir = context.config.storageDir;
+  const delay = (ms: number): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code !== "EBUSY" && err.code !== "EPERM") {
+        throw error;
+      }
+      await delay(25);
+    }
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
 }
 
 export interface RawResponse {

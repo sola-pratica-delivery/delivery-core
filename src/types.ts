@@ -1,6 +1,10 @@
 import type { MediaValidationResult } from "./probe/types.js";
 import type { JobRecord } from "./job/types.js";
-import type { UploadCompletedEventPayload } from "./events/types.js";
+import type {
+  EventDispatcher,
+  UploadCompletedEventPayload,
+} from "./events/types.js";
+import type { QueuePublisher } from "./queue/redis-publisher.js";
 
 export interface UploadMetadata {
   uploadId: string;
@@ -50,6 +54,8 @@ export interface AppConfig extends UploadServiceConfig {
   onEventEmitted?: (
     event: UploadCompletedEventPayload,
   ) => void | Promise<void>;
+  eventDispatcher?: EventDispatcher;
+  redisPublisher?: QueuePublisher;
 }
 
 export interface AuthInfo {

@@ -18,7 +18,8 @@ export function createTusServer(config: AppConfig): Server {
   const store = new ChecksumFileStore({ directory: config.storageDir });
   store.extensions = [...TUS_EXTENSIONS];
   const jobStore = new FileJobStore(config.storageDir);
-  const dispatcher = new InMemoryEventDispatcher();
+  const dispatcher =
+    config.eventDispatcher ?? new InMemoryEventDispatcher();
 
   const server = new Server({
     path: config.uploadPath,
