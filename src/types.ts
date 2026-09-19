@@ -13,6 +13,7 @@ export interface UploadMetadata {
   totalSize: number;
   uploadedBytes: number;
   userId?: string;
+  dynamicZoom?: boolean;
   createdAt: string;
   updatedAt: string;
   isCompleted: boolean;

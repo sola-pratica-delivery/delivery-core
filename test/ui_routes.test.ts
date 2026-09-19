@@ -62,6 +62,25 @@ describe("Interface web de upload (rotas públicas)", () => {
     expect(html).toContain('id="token-input"');
   });
 
+  it("GET /upload expõe o switch Dynamic Punch-in Zoom na Seção 1", async () => {
+    const response = await getPage(ctx, "/upload");
+    const html = response.body.toString("utf8");
+
+    expect(html).toContain('id="dynamic-zoom-toggle"');
+    expect(html).toContain("Dynamic Punch-in Zoom");
+    expect(html).toContain("Alternância de escala 100% / 115% simulando multi-câmera nas pausas");
+    expect(html).toContain("delivery-core.enableDynamicZoom");
+  });
+
+  it("GET / também expõe o switch Dynamic Punch-in Zoom", async () => {
+    const response = await getPage(ctx, "/");
+    const html = response.body.toString("utf8");
+
+    expect(html).toContain('id="dynamic-zoom-toggle"');
+    expect(html).toContain("Dynamic Punch-in Zoom");
+    expect(html).toContain("delivery-core.enableDynamicZoom");
+  });
+
   it("GET /tus.min.js retorna 200 com Content-Type application/javascript", async () => {
     const response = await rawRequest(ctx.baseUrl, "GET", "/tus.min.js");
     expect(response.status).toBe(200);

@@ -40,6 +40,7 @@ export interface UploadJobMetadata {
   totalSize: number;
   uploadedBytes: number;
   userId?: string;
+  dynamicZoom?: boolean;
   duration?: number;
   resolution?: { width: number; height: number };
   framerate?: number;
@@ -148,6 +149,7 @@ export function toUploadJobMetadata(
     totalSize: number;
     uploadedBytes: number;
     userId?: string;
+    dynamicZoom?: boolean;
     rawMetadata?: Record<string, string | null>;
   },
   probe?: MediaProbeMetadata,
@@ -158,6 +160,9 @@ export function toUploadJobMetadata(
     totalSize: upload.totalSize,
     uploadedBytes: upload.uploadedBytes,
     ...(upload.userId !== undefined ? { userId: upload.userId } : {}),
+    ...(upload.dynamicZoom !== undefined
+      ? { dynamicZoom: upload.dynamicZoom }
+      : {}),
     ...(upload.rawMetadata !== undefined
       ? { rawMetadata: upload.rawMetadata }
       : {}),

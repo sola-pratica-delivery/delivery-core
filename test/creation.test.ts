@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { startServer, stopServer, tusCreate, tusHead, tusPatch, b64, locationUrl } from "./helpers.js";
+import { startServer, stopServer, tusCreate, tusHead, tusPatch, b64, locationUrl, rawRequest } from "./helpers.js";
 import type { TestContext } from "./helpers.js";
 import { TEST_TOKEN, UPLOAD_PATH } from "./helpers.js";
 
@@ -76,6 +76,92 @@ describe("Criação de upload (creation extension)", () => {
       authorization: `Bearer ${TEST_TOKEN}`,
     });
     expect(response.status).toBe(400);
+  });
+
+  it("retorna dynamicZoom no Upload-Metadata do HEAD (round-trip base64)", async () => {
+    const created = await tusCreate(ctx, {
+      length: 100,
+      metadata: {
+        filename: "video.mp4",
+        filetype: "video/mp4",
+        dynamicZoom: "true",
+      },
+      token: TEST_TOKEN,
+    });
+    const location = locationUrl(created);
+    const head = await tusHead(ctx, location, TEST_TOKEN);
+    expect(head.status).toBe(200);
+    const metadata = head.headers["upload-metadata"];
+    expect(metadata).toContain("dynamicZoom");
+    expect(metadata).toContain(b64("true"));
+  });
+
+  it("persiste job.metadata.dynamicZoom === true no JobRecord quando enviado", async () => {
+    const created = await tusCreate(ctx, {
+      length: 10,
+      metadata: {
+        filename: "video.mp4",
+        filetype: "video/mp4",
+        dynamicZoom: "true",
+      },
+      token: TEST_TOKEN,
+    });
+    const location = locationUrl(created);
+    const uploadId = location.split("/").pop() as string;
+
+    const jobResponse = await rawRequest(
+      ctx.baseUrl,
+      "GET",
+      `${UPLOAD_PATH}/${uploadId}/job`,
+      { authorization: `Bearer ${TEST_TOKEN}` },
+    );
+    expect(jobResponse.status).toBe(200);
+    const job = JSON.parse(jobResponse.body.toString("utf8"));
+    expect(job.metadata.dynamicZoom).toBe(true);
+  });
+
+  it("persiste job.metadata.dynamicZoom === false no JobRecord (valor heterogêneo '0')", async () => {
+    const created = await tusCreate(ctx, {
+      length: 10,
+      metadata: {
+        filename: "video.mp4",
+        filetype: "video/mp4",
+        dynamicZoom: "0",
+      },
+      token: TEST_TOKEN,
+    });
+    const location = locationUrl(created);
+    const uploadId = location.split("/").pop() as string;
+
+    const jobResponse = await rawRequest(
+      ctx.baseUrl,
+      "GET",
+      `${UPLOAD_PATH}/${uploadId}/job`,
+      { authorization: `Bearer ${TEST_TOKEN}` },
+    );
+    expect(jobResponse.status).toBe(200);
+    const job = JSON.parse(jobResponse.body.toString("utf8"));
+    expect(job.metadata.dynamicZoom).toBe(false);
+  });
+
+  it("omite dynamicZoom quando o metadado não é enviado (upload legado)", async () => {
+    const created = await tusCreate(ctx, {
+      length: 10,
+      metadata: { filename: "video.mp4", filetype: "video/mp4" },
+      token: TEST_TOKEN,
+    });
+    const location = locationUrl(created);
+    const uploadId = location.split("/").pop() as string;
+
+    const jobResponse = await rawRequest(
+      ctx.baseUrl,
+      "GET",
+      `${UPLOAD_PATH}/${uploadId}/job`,
+      { authorization: `Bearer ${TEST_TOKEN}` },
+    );
+    expect(jobResponse.status).toBe(200);
+    const job = JSON.parse(jobResponse.body.toString("utf8"));
+    expect(job.metadata.dynamicZoom).toBeUndefined();
   });
 
   it("dispara o gancho onUploadComplete quando Upload-Offset == Upload-Length", async () => {

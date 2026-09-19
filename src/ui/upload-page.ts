@@ -80,6 +80,120 @@ export function renderUploadPage(options: UploadPageOptions): string {
       }
       .token-row input:focus { outline: 2px solid var(--accent); border-color: transparent; }
       .token-row input.invalid { border-color: var(--danger); outline: 2px solid rgba(239,68,68,0.35); }
+      .zoom-option {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin-top: 14px;
+        padding: 12px 14px;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+      .zoom-option .zoom-label {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        cursor: pointer;
+      }
+      .zoom-option .zoom-title-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .zoom-option .zoom-title {
+        font-weight: 700;
+        font-size: 13px;
+        color: var(--text);
+      }
+      .zoom-option .zoom-subtitle {
+        font-size: 12px;
+        color: var(--text-dim);
+      }
+      .zoom-help {
+        flex: none;
+        position: relative;
+        cursor: help;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: rgba(148,163,184,0.25);
+        color: var(--text-dim);
+        font-size: 11px;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .zoom-help:hover::after,
+      .zoom-help:focus::after {
+        content: "Alternância de escala 100% / 115% simulando multi-câmera nas pausas: o motor alterna harmonicamente entre plano normal e punch-in zoom sincronizado às pausas ou a cada 8-15s.";
+        position: absolute;
+        z-index: 20;
+        top: 24px;
+        right: 0;
+        width: 260px;
+        padding: 8px 10px;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+        color: var(--text);
+        font-weight: 400;
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: normal;
+        text-align: left;
+        cursor: default;
+      }
+      .switch {
+        position: relative;
+        display: inline-block;
+        width: 46px;
+        height: 26px;
+        flex: none;
+      }
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        transition: background 0.2s ease, border-color 0.2s ease;
+      }
+      .slider::before {
+        content: "";
+        position: absolute;
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        bottom: 3px;
+        background: var(--text-dim);
+        border-radius: 50%;
+        transition: transform 0.2s ease, background 0.2s ease;
+      }
+      .switch input:checked + .slider {
+        background: linear-gradient(90deg, var(--accent), var(--accent-2));
+        border-color: transparent;
+      }
+      .switch input:checked + .slider::before {
+        transform: translateX(20px);
+        background: #fff;
+      }
+      .switch input:focus-visible + .slider {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
       button {
         cursor: pointer;
         border: 1px solid transparent;
@@ -336,6 +450,19 @@ export function renderUploadPage(options: UploadPageOptions): string {
         <div class="error-banner" id="token-warning">
           Configure e salve o API Token acima antes de iniciar o upload.
         </div>
+        <div class="zoom-option">
+          <label class="zoom-label" for="dynamic-zoom-toggle">
+            <span class="zoom-title-row">
+              <span class="zoom-title">Dynamic Punch-in Zoom</span>
+              <span class="zoom-help" role="tooltip" tabindex="0" aria-label="Alternância de escala 100% / 115% simulando multi-câmera nas pausas">?</span>
+            </span>
+            <span class="zoom-subtitle">Alternância de escala 100% / 115% simulando multi-câmera nas pausas</span>
+          </label>
+          <label class="switch" for="dynamic-zoom-toggle">
+            <input id="dynamic-zoom-toggle" type="checkbox" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
       </section>
 
       <section class="card">
@@ -406,6 +533,7 @@ export function renderUploadPage(options: UploadPageOptions): string {
         } catch (e) { appConfig = {}; }
         var UPLOAD_PATH = appConfig.uploadPath || "/uploads";
         var TOKEN_KEY = "delivery-core.apiToken";
+        var ZOOM_KEY = "delivery-core.enableDynamicZoom";
         var ALLOWED_EXT = [".mp4", ".mkv", ".mov"];
         var POLL_INTERVAL_MS = 1500;
 
@@ -421,6 +549,7 @@ export function renderUploadPage(options: UploadPageOptions): string {
           fileType: document.getElementById("file-type"),
           fileWarning: document.getElementById("file-warning"),
           tokenWarning: document.getElementById("token-warning"),
+          dynamicZoomToggle: document.getElementById("dynamic-zoom-toggle"),
           progressShell: document.getElementById("progress-shell"),
           progressBar: document.getElementById("progress-bar"),
           progressPercent: document.getElementById("progress-percent"),
@@ -573,6 +702,31 @@ export function renderUploadPage(options: UploadPageOptions): string {
           return ALLOWED_EXT.some(function (ext) { return name.endsWith(ext); });
         }
 
+        function loadDynamicZoom() {
+          var stored = null;
+          try {
+            stored = localStorage.getItem(ZOOM_KEY);
+          } catch (e) {
+            stored = null;
+          }
+          var enabled = true;
+          if (stored !== null && stored !== "") {
+            enabled = stored !== "false" && stored !== "0";
+          }
+          els.dynamicZoomToggle.checked = enabled;
+          return enabled;
+        }
+
+        function saveDynamicZoom() {
+          var enabled = els.dynamicZoomToggle.checked;
+          try {
+            localStorage.setItem(ZOOM_KEY, enabled ? "true" : "false");
+          } catch (e) {
+            // Degrada graciosamente para o valor em memória.
+          }
+          return enabled;
+        }
+
         function resetFileSelector() {
           state.file = null;
           state.uploadUrl = null;
@@ -665,7 +819,8 @@ export function renderUploadPage(options: UploadPageOptions): string {
             headers: { authorization: "Bearer " + token },
             metadata: {
               filename: state.file.name,
-              filetype: state.file.type || "video"
+              filetype: state.file.type || "video",
+              dynamicZoom: saveDynamicZoom() ? "true" : "false"
             },
             onError: function (error) {
               logEvent("Erro no upload: " + error.message, "err");
@@ -985,8 +1140,13 @@ export function renderUploadPage(options: UploadPageOptions): string {
         els.pauseUpload.addEventListener("click", pauseUpload);
         els.resumeUpload.addEventListener("click", resumeUpload);
         els.cancelUpload.addEventListener("click", cancelUpload);
+        els.dynamicZoomToggle.addEventListener("change", function () {
+          var enabled = saveDynamicZoom();
+          logEvent("Dynamic Zoom " + (enabled ? "ativado" : "desativado") + " (" + ZOOM_KEY + ").");
+        });
 
         loadToken();
+        loadDynamicZoom();
         logEvent("Interface carregada. Pronta para ingestão.");
       })();
     </script>

@@ -103,6 +103,7 @@ function makeVideoJob(overrides: Partial<VideoProcessingJobData> = {}): VideoPro
       filetype: "video/mp4",
       totalSize: 100,
       uploadedBytes: 100,
+      dynamicZoom: true,
     },
     createdAt: "2024-01-01T00:00:00.000Z",
     ...overrides,
@@ -156,9 +157,37 @@ describe("RedisQueuePublisher - publicação unitária", () => {
         filetype: "video/mp4",
         totalSize: 100,
         uploadedBytes: 100,
+        dynamicZoom: true,
       },
       createdAt: "2024-01-01T00:00:00.000Z",
     });
+    await publisher.close();
+  });
+
+  it("publishes dynamicZoom: false no payload quando configurado false", async () => {
+    const client = new RecordingClient();
+    const logger = makeLogger();
+    const publisher = new RedisQueuePublisher({
+      config: DEFAULT_QUEUE_CONFIG,
+      logger,
+      client,
+    });
+    const job = makeVideoJob({
+      metadata: {
+        filename: "video.mp4",
+        filetype: "video/mp4",
+        totalSize: 100,
+        uploadedBytes: 100,
+        dynamicZoom: false,
+      },
+    });
+
+    const ok = await publisher.publishVideoProcessing(job);
+
+    expect(ok).toBe(true);
+    const call = client.rpushCalls[0];
+    const parsed = JSON.parse(call?.values[0] ?? "{}");
+    expect(parsed.metadata.dynamicZoom).toBe(false);
     await publisher.close();
   });
 
@@ -270,7 +299,7 @@ describe.runIf(hasFfmpeg)("Integração: UPLOAD_COMPLETED publica na fila video-
       const location = await createUpload(
         ctx,
         sampleBuffer.length,
-        { filename: "sample.mp4", filetype: "video/mp4" },
+        { filename: "sample.mp4", filetype: "video/mp4", dynamicZoom: "true" },
         TEST_TOKEN,
       );
       const uploadId = location.split("/").pop() as string;
@@ -295,6 +324,7 @@ describe.runIf(hasFfmpeg)("Integração: UPLOAD_COMPLETED publica na fila video-
         totalSize: sampleBuffer.length,
         uploadedBytes: sampleBuffer.length,
         videoCodec: "h264",
+        dynamicZoom: true,
       });
 
       const jobResponse = await rawRequest(
