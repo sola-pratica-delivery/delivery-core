@@ -16,6 +16,12 @@ import {
   DEFAULT_THUMBNAIL_QA_OPTIONS,
   verifyThumbnail,
 } from "./qa/thumbnail-verifier.js";
+import {
+  resolveSeoOptions,
+  synthesizeSeoMetadata,
+} from "./seo/synthesizer.js";
+import { SeoStore } from "./seo/store.js";
+import type { SeoSynthesisOptions, WhisperTranscription } from "./seo/types.js";
 import { FileJobStore } from "./job/store.js";
 import { JOB_STATUSES } from "./job/types.js";
 import type { JobPublicationArchive } from "./job/types.js";
@@ -83,6 +89,38 @@ const transitionBodySchema = z.object({
   publication: publicationSchema.optional(),
 });
 
+const whisperSegmentSchema = z.object({
+  id: z.union([z.number().int().nonnegative(), z.string()]).optional(),
+  start: z.number().nonnegative(),
+  end: z.number().nonnegative().optional(),
+  text: z.string(),
+});
+
+const whisperTranscriptionSchema = z.object({
+  language: z.string().optional(),
+  duration: z.number().nonnegative().optional(),
+  text: z.string(),
+  segments: z.array(whisperSegmentSchema),
+});
+
+const seoSynthesisOptionsSchema = z
+  .object({
+    maxTitleLength: z.number().int().positive(),
+    maxTagsLength: z.number().int().positive(),
+    maxDescriptionLength: z.number().int().positive(),
+    minChapterIntervalSeconds: z.number().nonnegative(),
+    language: z.string().min(1),
+    customHook: z.string(),
+    channelCallToAction: z.string(),
+  })
+  .partial()
+  .optional();
+
+const seoSynthesisBodySchema = z.object({
+  transcription: whisperTranscriptionSchema,
+  options: seoSynthesisOptionsSchema,
+});
+
 export function buildApp(config: AppConfig): FastifyInstance {
   const app = Fastify({ logger: { level: config.logLevel } });
   const tus = createTusServer(config);
@@ -90,6 +128,7 @@ export function buildApp(config: AppConfig): FastifyInstance {
   const validationStore = new ValidationStore(config.storageDir);
   const jobStore = new FileJobStore(config.storageDir);
   const qaStore = new QaStore(config.storageDir);
+  const seoStore = new SeoStore(config.storageDir);
   const cleanupService = new StorageCleanupService(config.storageDir, jobStore, {
     orphanTtlMs: config.orphanTtlHours * 60 * 60 * 1000,
   });
@@ -565,6 +604,94 @@ export function buildApp(config: AppConfig): FastifyInstance {
         return reply.status(200).send(persisted);
       }
       return reply.status(422).send(persisted);
+    },
+  });
+
+  app.get(`${config.uploadPath}/:id/seo`, {
+    onRequest: async (request, reply) => {
+      await authenticate(request, reply);
+    },
+    handler: async (request, reply) => {
+      if (reply.sent) {
+        return;
+      }
+      const { id } = request.params as { id?: string };
+      if (typeof id !== "string" || id.length === 0) {
+        return reply.status(404).send({ uploadId: id ?? "", status: "NOT_FOUND" });
+      }
+      const metadata = await seoStore.read(id);
+      if (metadata === null) {
+        return reply.status(404).send({ uploadId: id, status: "NOT_FOUND" });
+      }
+      return reply.status(200).send(metadata);
+    },
+  });
+
+  app.post(`${config.uploadPath}/:id/seo/synthesize`, {
+    onRequest: async (request, reply) => {
+      await authenticate(request, reply);
+    },
+    handler: async (request, reply) => {
+      if (reply.sent) {
+        return;
+      }
+      const { id } = request.params as { id?: string };
+      if (typeof id !== "string" || id.length === 0) {
+        return reply.status(404).send({ uploadId: id ?? "", status: "NOT_FOUND" });
+      }
+      const parsed = seoSynthesisBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({
+          code: "INVALID_PAYLOAD",
+          message: "Invalid SEO synthesis payload",
+        });
+      }
+      const mappedOptions: SeoSynthesisOptions = {
+        ...(parsed.data.options?.maxTitleLength !== undefined
+          ? { maxTitleLength: parsed.data.options.maxTitleLength }
+          : {}),
+        ...(parsed.data.options?.maxTagsLength !== undefined
+          ? { maxTagsLength: parsed.data.options.maxTagsLength }
+          : {}),
+        ...(parsed.data.options?.maxDescriptionLength !== undefined
+          ? { maxDescriptionLength: parsed.data.options.maxDescriptionLength }
+          : {}),
+        ...(parsed.data.options?.minChapterIntervalSeconds !== undefined
+          ? {
+              minChapterIntervalSeconds:
+                parsed.data.options.minChapterIntervalSeconds,
+            }
+          : {}),
+        ...(parsed.data.options?.language !== undefined
+          ? { language: parsed.data.options.language }
+          : {}),
+        ...(parsed.data.options?.customHook !== undefined
+          ? { customHook: parsed.data.options.customHook }
+          : {}),
+        ...(parsed.data.options?.channelCallToAction !== undefined
+          ? { channelCallToAction: parsed.data.options.channelCallToAction }
+          : {}),
+      };
+      const resolved = resolveSeoOptions(mappedOptions);
+      const transcription: WhisperTranscription = {
+        text: parsed.data.transcription.text,
+        segments: parsed.data.transcription.segments.map((item) => ({
+          start: item.start,
+          text: item.text,
+          ...(item.id !== undefined ? { id: item.id } : {}),
+          ...(item.end !== undefined ? { end: item.end } : {}),
+        })),
+        ...(parsed.data.transcription.language !== undefined
+          ? { language: parsed.data.transcription.language }
+          : {}),
+        ...(parsed.data.transcription.duration !== undefined
+          ? { duration: parsed.data.transcription.duration }
+          : {}),
+      };
+      const metadata = synthesizeSeoMetadata(transcription, resolved);
+      const persisted = { ...metadata, uploadId: id };
+      await seoStore.save(id, persisted);
+      return reply.status(200).send(persisted);
     },
   });
 
