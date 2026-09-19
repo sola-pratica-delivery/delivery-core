@@ -2,8 +2,8 @@ export interface UploadPageOptions {
   uploadPath: string;
 }
 
-const CDN_TUS_SCRIPT =
-  "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.2/dist/browser/tus.js";
+const CDN_TUS_FALLBACK =
+  "https://cdn.jsdelivr.net/npm/tus-js-client@latest/dist/tus.min.js";
 
 export function renderUploadPage(options: UploadPageOptions): string {
   const config = JSON.stringify({ uploadPath: options.uploadPath });
@@ -388,7 +388,12 @@ export function renderUploadPage(options: UploadPageOptions): string {
 
     <footer>Delivery Core &middot; TUS 1.0.0 &middot; Ingestão Resumível de Mídia</footer>
 
-    <script src="${CDN_TUS_SCRIPT}"></script>
+    <script src="/tus.min.js"></script>
+    <script>
+      if (typeof tus === "undefined") {
+        document.write('<script src="${CDN_TUS_FALLBACK}"><\\/script>');
+      }
+    </script>
     <script>
       (function () {
         "use strict";
@@ -542,6 +547,15 @@ export function renderUploadPage(options: UploadPageOptions): string {
         }
 
         function loadToken() {
+          try {
+            var urlParams = new URLSearchParams(window.location.search);
+            var queryToken = urlParams.get("token");
+            if (queryToken && queryToken.trim().length > 0) {
+              localStorage.setItem(TOKEN_KEY, queryToken.trim());
+            }
+          } catch (e) {
+            // Ignora se não tiver suporte a URLSearchParams
+          }
           var stored = localStorage.getItem(TOKEN_KEY);
           if (stored) {
             els.tokenInput.value = stored;

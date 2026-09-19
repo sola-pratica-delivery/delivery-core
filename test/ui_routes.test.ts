@@ -61,4 +61,13 @@ describe("Interface web de upload (rotas públicas)", () => {
     expect(html).toContain('id="dropzone"');
     expect(html).toContain('id="token-input"');
   });
+
+  it("GET /tus.min.js retorna 200 com Content-Type application/javascript", async () => {
+    const response = await rawRequest(ctx.baseUrl, "GET", "/tus.min.js");
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toMatch(
+      /^application\/javascript;\s*charset=utf-8$/i,
+    );
+    expect(response.body.length).toBeGreaterThan(10000);
+  });
 });

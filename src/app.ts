@@ -27,6 +27,7 @@ import { JOB_STATUSES } from "./job/types.js";
 import type { JobPublicationArchive } from "./job/types.js";
 import { InvalidStateTransitionError } from "./job/state-machine.js";
 import { renderUploadPage } from "./ui/upload-page.js";
+import { TUS_CLIENT_BUNDLE } from "./ui/tus-client-bundle.js";
 import { InMemoryQueueManager } from "./queue/manager.js";
 import { QUEUE_NAMES } from "./queue/types.js";
 import type { VideoProcessingJobData, YouTubePublishJobData } from "./queue/types.js";
@@ -175,6 +176,12 @@ export function buildApp(config: AppConfig): FastifyInstance {
 
   app.get("/", serveUploadUi);
   app.get("/upload", serveUploadUi);
+  app.get("/tus.min.js", async (_request: FastifyRequest, reply: FastifyReply) => {
+    reply
+      .type("application/javascript; charset=utf-8")
+      .header("cache-control", "public, max-age=86400")
+      .send(TUS_CLIENT_BUNDLE);
+  });
 
   async function resolveUploadFile(uploadId: string): Promise<string | null> {
     const job = await jobStore.get(uploadId);
