@@ -23,11 +23,13 @@ const SUPPORTED_VIDEO_CODECS: Record<string, SupportedVideoCodec> = {
   apco: "prores",
   ap4h: "prores",
   ap4x: "prores",
+  av1: "av1",
+  av01: "av1",
 };
 
 const SUPPORTED_AUDIO_CODECS = new Set(["aac", "mp3", "opus", "flac"]);
 
-const SUPPORTED_CODECS_LIST = "h264, h265, prores";
+const SUPPORTED_CODECS_LIST = "h264, h265, prores, av1";
 
 export function normalizeFramerate(raw: string | undefined): number | null {
   if (raw === undefined || raw === "" || raw === "N/A") {

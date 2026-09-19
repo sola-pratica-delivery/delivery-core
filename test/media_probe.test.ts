@@ -305,6 +305,28 @@ describe("validateMedia", () => {
     }
   });
 
+  it("aceita codec AV1 (codec_name av1)", async () => {
+    runFfprobeMock.mockResolvedValue(
+      probeOutput([videoStream({ codec_name: "av1" })], { duration: "10" }),
+    );
+    const result = await validateMedia(sampleFile());
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.metadata.videoCodec).toBe("av1");
+    }
+  });
+
+  it("aceita codec AV1 com identificador fourcc av01", async () => {
+    runFfprobeMock.mockResolvedValue(
+      probeOutput([videoStream({ codec_name: "av01" })], { duration: "10" }),
+    );
+    const result = await validateMedia(sampleFile());
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.metadata.videoCodec).toBe("av1");
+    }
+  });
+
   it("rejeita codec de vídeo não suportado (VP9)", async () => {
     runFfprobeMock.mockResolvedValue(
       probeOutput([videoStream({ codec_name: "vp9" })], { duration: "10" }),
@@ -314,18 +336,20 @@ describe("validateMedia", () => {
     if (!result.valid) {
       expect(result.error.code).toBe("UNSUPPORTED_VIDEO_CODEC");
       expect(result.error.message).toContain("vp9");
-      expect(result.error.message).toContain("h264, h265, prores");
+      expect(result.error.message).toContain("h264, h265, prores, av1");
     }
   });
 
-  it("rejeita codec de vídeo não suportado (AV1)", async () => {
+  it("rejeita codec de vídeo não suportado (Theora)", async () => {
     runFfprobeMock.mockResolvedValue(
-      probeOutput([videoStream({ codec_name: "av1" })], { duration: "10" }),
+      probeOutput([videoStream({ codec_name: "theora" })], { duration: "10" }),
     );
     const result = await validateMedia(sampleFile());
     expect(result.valid).toBe(false);
     if (!result.valid) {
       expect(result.error.code).toBe("UNSUPPORTED_VIDEO_CODEC");
+      expect(result.error.message).toContain("theora");
+      expect(result.error.message).toContain("h264, h265, prores, av1");
     }
   });
 

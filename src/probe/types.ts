@@ -1,4 +1,4 @@
-export type SupportedVideoCodec = "h264" | "h265" | "prores";
+export type SupportedVideoCodec = "h264" | "h265" | "prores" | "av1";
 
 export interface MediaResolution {
   width: number;
