@@ -26,6 +26,7 @@ import { FileJobStore } from "./job/store.js";
 import { JOB_STATUSES } from "./job/types.js";
 import type { JobPublicationArchive } from "./job/types.js";
 import { InvalidStateTransitionError } from "./job/state-machine.js";
+import { renderUploadPage } from "./ui/upload-page.js";
 import { InMemoryQueueManager } from "./queue/manager.js";
 import { QUEUE_NAMES } from "./queue/types.js";
 import type { VideoProcessingJobData, YouTubePublishJobData } from "./queue/types.js";
@@ -165,6 +166,15 @@ export function buildApp(config: AppConfig): FastifyInstance {
   app.addHook("onClose", async () => {
     await queueManager.close();
   });
+
+  async function serveUploadUi(_request: FastifyRequest, reply: FastifyReply) {
+    reply
+      .type("text/html; charset=utf-8")
+      .send(renderUploadPage({ uploadPath: config.uploadPath }));
+  }
+
+  app.get("/", serveUploadUi);
+  app.get("/upload", serveUploadUi);
 
   async function resolveUploadFile(uploadId: string): Promise<string | null> {
     const job = await jobStore.get(uploadId);
