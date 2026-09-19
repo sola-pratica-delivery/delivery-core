@@ -455,6 +455,7 @@ export function renderUploadPage(options: UploadPageOptions): string {
           speed: 0,
           pollTimer: null,
           lastJobStatus: null,
+          lastValidationStatus: null,
           pollStopped: false
         };
 
@@ -596,6 +597,7 @@ export function renderUploadPage(options: UploadPageOptions): string {
           els.validationReport.classList.remove("visible");
           els.validationGrid.innerHTML = "";
           els.validationError.innerHTML = "";
+          state.lastValidationStatus = null;
           stopPolling();
           setControls();
         }
@@ -925,13 +927,19 @@ export function renderUploadPage(options: UploadPageOptions): string {
             });
             els.validationGrid.innerHTML = html;
             els.validationError.innerHTML = "";
-            logEvent("Relatório de validação recebido: VALID");
+            if (state.lastValidationStatus !== report.status) {
+              state.lastValidationStatus = report.status;
+              logEvent("Relatório de validação recebido: VALID", "ok");
+            }
           } else if (report.status === "REJECTED" || report.error) {
             els.validationReport.classList.add("visible");
             els.validationError.innerHTML = '<div class="error-banner visible">Validação rejeitada: [' +
               (report.error && report.error.code ? report.error.code : "?") + "] " +
               (report.error && report.error.message ? report.error.message : "recusada pelo probe") + '</div>';
-            logEvent("Relatório de validação recebido: REJECTED", "err");
+            if (state.lastValidationStatus !== "REJECTED") {
+              state.lastValidationStatus = "REJECTED";
+              logEvent("Relatório de validação recebido: REJECTED", "err");
+            }
           }
         }
 
