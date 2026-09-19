@@ -373,6 +373,8 @@ export function renderUploadPage(options: UploadPageOptions): string {
           <span class="step" data-step="UPLOADING">Uploading</span>
           <span class="step" data-step="UPLOAD_COMPLETED">Upload OK</span>
           <span class="step" data-step="PROCESSING">Processing</span>
+          <span class="step" data-step="AUTO_QA">Auto-QA</span>
+          <span class="step" data-step="AUTO_PUBLISH_YOUTUBE">YouTube</span>
           <span class="step" data-step="COMPLETED">Concluído</span>
           <span class="step" data-step="FAILED">Falhou</span>
         </div>
@@ -880,7 +882,7 @@ export function renderUploadPage(options: UploadPageOptions): string {
           }
           els.jobIdLabel.textContent = "Job-ID: " + (job.jobId || "-");
           var steps = els.liveTracker.querySelectorAll(".step");
-          var order = ["UPLOADING", "UPLOAD_COMPLETED", "PROCESSING", "COMPLETED", "FAILED"];
+          var order = ["UPLOADING", "UPLOAD_COMPLETED", "PROCESSING", "AUTO_QA", "AUTO_PUBLISH_YOUTUBE", "COMPLETED", "FAILED"];
           order.forEach(function (name) {
             var el = null;
             for (var i = 0; i < steps.length; i++) {
